@@ -59,6 +59,7 @@ async function fetchFromAniwatch(endpoint) {
 }
 
 async function getSourceUrl(episodeId) {
+  console.log("Episode ID:", episodeId);
   try {
     const resp = await axios.get(
       `https://anime-api-k3tm.onrender.com/api/stream?id=${episodeId}`
@@ -66,18 +67,34 @@ async function getSourceUrl(episodeId) {
 
     const streamingInfo = resp.data.results.streamingInfo;
 
-    // Mencari objek yang sesuai dengan kriteria server "HD-1" dan type "sub"
+    // Mencari objek yang sesuai dengan kriteria server "HD-1" dan type "sub" atau "Vidcloud" dan type "sub"
+    console.log("Streaming Info:", streamingInfo);
     const targetStream = streamingInfo.find((stream) => {
       return (
-        stream.value.decryptionResult.server === "HD-1" &&
-        stream.value.decryptionResult.type === "sub"
+        (stream.subtitleResult &&
+          stream.subtitleResult.subtitles &&
+          stream.subtitleResult.subtitles.some(
+            (subtitle) =>
+              subtitle.kind === "captions" && subtitle.label === "English"
+          )) ||
+        (stream.value &&
+          stream.value.decryptionResult &&
+          stream.value.decryptionResult.server === "Vidcloud" &&
+          stream.value.decryptionResult.type === "sub")
       );
     });
 
     if (targetStream) {
-      return targetStream.value.decryptionResult.link;
+      return (
+        targetStream.value?.decryptionResult?.link ||
+        targetStream.subtitleResult?.subtitles.find(
+          (subtitle) => subtitle.label === "English"
+        )?.file
+      );
     } else {
-      console.log(`Tidak ada sumber dengan server HD-1 dan type sub`);
+      console.log(
+        `Tidak ada sumber dengan server HD-1 atau Vidcloud dan type sub`
+      );
       return null;
     }
   } catch (error) {
@@ -162,7 +179,13 @@ builder.defineStreamHandler(async ({ type, id }) => {
         "Title:",
         title + " season " + season + " episode " + episode
       );
-      url = await fetchData(`${title} Season ${season}`, Number(episode), date);
+      let titles;
+      if (season === "1") {
+        titles = title;
+      } else {
+        titles = `${title} Season ${season}`;
+      }
+      url = await fetchData(titles, Number(episode), date);
     }
 
     if (url) {
