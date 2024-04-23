@@ -11,6 +11,7 @@ const builder = new addonBuilder({
 
 async function fetchData(query, episodeNumber, date) {
   const data = await fetchFromAniwatch(`/anime/search/suggest?q=${query}`);
+  console.log("Data:", data);
   const formattedDate = await formatDate(date);
   const dateMatch = data.suggestions.find(
     (s) => s.moreInfo[0] === formattedDate
@@ -21,26 +22,15 @@ async function fetchData(query, episodeNumber, date) {
 
   let suggestion;
   if (exactMatch) {
+    console.log("Exact match found:", exactMatch);
     suggestion = exactMatch;
   } else if (dateMatch) {
+    console.log("Date match found:", dateMatch);
     suggestion = dateMatch;
-  } else {
-    const partialMatches = data.suggestions.filter((s) =>
-      query
-        .toLowerCase()
-        .split(" ")
-        .some((word) => s.name.toLowerCase().includes(word))
-    );
-    suggestion = partialMatches.sort(
-      (a, b) =>
-        query.split(" ").filter((word) => b.name.toLowerCase().includes(word))
-          .length -
-        query.split(" ").filter((word) => a.name.toLowerCase().includes(word))
-          .length
-    )[0];
   }
 
   if (suggestion) {
+    console.log("Suggestion found:", suggestion);
     const episodes = await fetchFromAniwatch(
       `/anime/episodes/${suggestion.id}`
     );
@@ -71,13 +61,23 @@ async function fetchFromAniwatch(endpoint) {
 async function getSourceUrl(episodeId) {
   try {
     const resp = await axios.get(
-      `https://api-aniwatch.onrender.com/anime/episode-srcs?id=${episodeId}&server=vidstreaming&category=sub`
+      `https://anime-api-k3tm.onrender.com/api/stream?id=${episodeId}`
     );
-    const source = resp.data.sources.find((s) => s.type === "hls");
-    if (source) {
-      return source.url;
+
+    const streamingInfo = resp.data.results.streamingInfo;
+
+    // Mencari objek yang sesuai dengan kriteria server "HD-1" dan type "sub"
+    const targetStream = streamingInfo.find((stream) => {
+      return (
+        stream.value.decryptionResult.server === "HD-1" &&
+        stream.value.decryptionResult.type === "sub"
+      );
+    });
+
+    if (targetStream) {
+      return targetStream.value.decryptionResult.link;
     } else {
-      console.log(`Tidak ada sumber dengan HLS`);
+      console.log(`Tidak ada sumber dengan server HD-1 dan type sub`);
       return null;
     }
   } catch (error) {
@@ -154,10 +154,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
       const date = await getImdbDate(id, true);
       url = await fetchData(title, 1, date);
     } else if (type === "series") {
+      console.log("ID:", id);
       const [imdbId, season, episode] = id.split(":");
       const title = await getTmdbNameFromImdbId(imdbId, false);
       const date = await getImdbDate(imdbId, false);
-      url = await fetchData(`${title} season ${season}`, Number(episode), date);
+      console.log(
+        "Title:",
+        title + " season " + season + " episode " + episode
+      );
+      url = await fetchData(`${title} Season ${season}`, Number(episode), date);
     }
 
     if (url) {
